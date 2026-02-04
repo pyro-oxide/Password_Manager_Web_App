@@ -19,9 +19,12 @@
     "motion": "^12.31.0",
     "mysql2": "^3.16.3",
     "next": "16.0.1",
+    "qrcode": "^1.5.4",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "tailwind-merge": "^3.3.1"
+    "speakeasy": "^2.0.0",
+    "tailwind-merge": "^3.3.1",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
