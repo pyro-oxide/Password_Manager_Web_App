@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Edit, Trash2, Copy, Lock, Settings } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Plus, Edit, Trash2, Lock, Settings } from 'lucide-react';
 import { useVaultStore } from '../lib/store-db';
 import { Sidebar } from './sidebar';
 import { ItemList } from './item-list';
@@ -9,14 +9,33 @@ import { DetailsPanel } from './details-panel';
 import { PasswordDialog } from './password-dialog';
 import { SettingsModal } from './settings-modal';
 import { ActivityTracker } from './activity-tracker';
+import Alert from './alert';
 
 export function Dashboard() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [alertState, setAlertState] = useState<{ type: 'success' | 'danger'; text: string } | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { selectedPasswordId, passwords, deletePassword, lock, selectPassword } = useVaultStore();
 
   const selectedPassword = passwords.find((p) => p.id === selectedPasswordId);
+
+  const showAlert = (type: 'success' | 'danger', text: string) => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+    }
+    setAlertState({ type, text });
+    hideTimer.current = setTimeout(() => setAlertState(null), 3000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+      }
+    };
+  }, []);
 
   const handleEdit = () => {
     if (selectedPasswordId) {
@@ -29,8 +48,9 @@ export function Dashboard() {
       const success = await deletePassword(selectedPasswordId);
       if (success) {
         selectPassword(null);
+        showAlert('success', 'Password deleted');
       } else {
-        alert('Failed to delete password. Please try again.');
+        showAlert('danger', 'Failed to delete password. Please try again.');
       }
     }
   };
@@ -104,6 +124,7 @@ export function Dashboard() {
         <PasswordDialog
           isOpen={showAddDialog}
           onClose={() => setShowAddDialog(false)}
+          onNotify={showAlert}
         />
       )}
 
@@ -111,6 +132,7 @@ export function Dashboard() {
         <PasswordDialog
           isOpen={showEditDialog}
           onClose={() => setShowEditDialog(false)}
+          onNotify={showAlert}
           password={selectedPassword}
         />
       )}
@@ -119,8 +141,10 @@ export function Dashboard() {
         <SettingsModal
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
+          onNotify={showAlert}
         />
       )}
+      {alertState && <Alert type={alertState.type} text={alertState.text} />}
       </div>
     </>
   );

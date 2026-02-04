@@ -4,19 +4,22 @@ import { useState } from 'react';
 import { X, Key, CheckCircle, XCircle, Heart } from 'lucide-react';
 import { useVaultStore } from '../lib/store-db';
 import type { PasswordEntry } from '../types';
+import { TwoFactorSetupDialog } from './two-factor-setup-dialog';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onNotify: (type: 'success' | 'danger', message: string) => void;
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, onNotify }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'security' | 'vault-health' | 'categories'>('general');
   const { settings, updateSettings, categories, addCategory, updateCategory, deleteCategory, checkVaultHealth, passwords } = useVaultStore();
   const [healthReport, setHealthReport] = useState<any>(null);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [show2FASetup, setShow2FASetup] = useState(false);
 
   const handleCheckHealth = () => {
     const health = checkVaultHealth();
@@ -24,24 +27,28 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   };
 
   const handleAddCategory = () => {
-    if (newCategoryName.trim()) {
-      const colors = [
-        'bg-pink-200 text-pink-800',
-        'bg-yellow-200 text-yellow-800',
-        'bg-green-200 text-green-800',
-        'bg-blue-200 text-blue-800',
-        'bg-purple-200 text-purple-800',
-        'bg-red-200 text-red-800',
-      ];
-      const randomColor = colors[Math.floor(Math.random() * colors.length)];
-      
-      addCategory({
-        id: Date.now().toString(),
-        name: newCategoryName.trim(),
-        color: randomColor,
-      });
-      setNewCategoryName('');
+    if (!newCategoryName.trim()) {
+      onNotify('danger', 'Please enter a category name');
+      return;
     }
+
+    const colors = [
+      'bg-pink-200 text-pink-800',
+      'bg-yellow-200 text-yellow-800',
+      'bg-green-200 text-green-800',
+      'bg-blue-200 text-blue-800',
+      'bg-purple-200 text-purple-800',
+      'bg-red-200 text-red-800',
+    ];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    
+    addCategory({
+      id: Date.now().toString(),
+      name: newCategoryName.trim(),
+      color: randomColor,
+    });
+    setNewCategoryName('');
+    onNotify('success', 'Category added');
   };
 
   const handleUpdateCategory = (id: string) => {
@@ -49,6 +56,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       updateCategory(id, editingCategoryName.trim());
       setEditingCategoryId(null);
       setEditingCategoryName('');
+      onNotify('success', 'Category updated');
     }
   };
 
@@ -144,14 +152,29 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => updateSettings({ twoFactorEnabled: true })}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800"
+                    onClick={() => setShow2FASetup(true)}
+                    disabled={settings.twoFactorEnabled}
+                    className={`flex items-center gap-2 px-4 py-2 rounded ${
+                      settings.twoFactorEnabled
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-gray-900 text-white hover:bg-gray-800'
+                    }`}
                   >
                     <CheckCircle className="w-4 h-4" />
                     Enable 2FA...
                   </button>
                   <button
-                    onClick={() => updateSettings({ twoFactorEnabled: false })}
+                    onClick={async () => {
+                      if (confirm('Are you sure you want to disable two-factor authentication? This will make your account less secure.')) {
+                        try {
+                          await updateSettings({ twoFactorEnabled: false });
+                          onNotify('success', 'Two-factor authentication disabled');
+                        } catch (error) {
+                          console.error(error);
+                          onNotify('danger', 'Failed to disable two-factor authentication');
+                        }
+                      }
+                    }}
                     disabled={!settings.twoFactorEnabled}
                     className={`flex items-center gap-2 px-4 py-2 rounded ${
                       settings.twoFactorEnabled
@@ -315,7 +338,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                           deleteCategory(categoryToDelete.id);
                           setEditingCategoryId(null);
                           setEditingCategoryName('');
+                          onNotify('success', 'Category deleted');
                         }
+                      } else if (categoryToDelete && categoryToDelete.name === 'Uncategorized') {
+                        onNotify('danger', 'Cannot delete the default "Uncategorized" category');
                       }
                     }}
                     className="w-10 h-10 border rounded hover:bg-red-50 flex items-center justify-center text-red-600"
@@ -368,6 +394,15 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </button>
         </div>
       </div>
+
+      <TwoFactorSetupDialog
+        isOpen={show2FASetup}
+        onClose={() => setShow2FASetup(false)}
+        onSuccess={() => {
+          setShow2FASetup(false);
+        }}
+        onNotify={onNotify}
+      />
     </div>
   );
 }

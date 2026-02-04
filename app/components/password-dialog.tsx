@@ -8,10 +8,11 @@ import type { PasswordEntry } from '../types';
 interface PasswordDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onNotify: (type: 'success' | 'danger', message: string) => void;
   password?: PasswordEntry;
 }
 
-export function PasswordDialog({ isOpen, onClose, password }: PasswordDialogProps) {
+export function PasswordDialog({ isOpen, onClose, onNotify, password }: PasswordDialogProps) {
   const { addPassword, updatePassword, passwords, categories, calculatePasswordStrength } = useVaultStore();
   const [formData, setFormData] = useState({
     siteName: '',
@@ -79,9 +80,10 @@ export function PasswordDialog({ isOpen, onClose, password }: PasswordDialogProp
     if (password) {
       const success = await updatePassword(password.id, formData);
       if (success) {
+        onNotify('success', 'Password updated successfully');
         onClose();
       } else {
-        alert('Failed to update password. Please try again.');
+        onNotify('danger', 'Failed to update password. Please try again.');
       }
     } else {
       const newPassword: PasswordEntry = {
@@ -92,9 +94,10 @@ export function PasswordDialog({ isOpen, onClose, password }: PasswordDialogProp
       };
       const success = await addPassword(newPassword);
       if (success) {
+        onNotify('success', 'Password added successfully');
         onClose();
       } else {
-        alert('Failed to add password. Please try again.');
+        onNotify('danger', 'Failed to add password. Please try again.');
       }
     }
   };

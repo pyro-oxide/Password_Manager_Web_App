@@ -7,7 +7,10 @@ import { useVaultStore } from '../lib/store-db';
 export function LoginPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [error, setError] = useState('');
+  const [requires2FA, setRequires2FA] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const { verifyAndUnlock, checkMasterPasswordExists, masterPasswordExists } = useVaultStore();
   const [isSetup, setIsSetup] = useState(false);
 
@@ -17,7 +20,7 @@ export function LoginPage() {
     });
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -31,18 +34,55 @@ export function LoginPage() {
         setError('Passwords do not match');
         return;
       }
+      setIsVerifying(true);
       const success = await verifyAndUnlock(password);
+      setIsVerifying(false);
       if (!success) {
         setError('Failed to set up master password');
       }
     } else {
       // Login mode
-      const success = await verifyAndUnlock(password);
-      if (success) {
+      setIsVerifying(true);
+      const result = await verifyAndUnlock(password);
+      setIsVerifying(false);
+      if (result === true) {
         setPassword('');
+        setTwoFactorCode('');
+        setRequires2FA(false);
+      } else if (result && typeof result === 'object' && 'requires2FA' in result) {
+        // Password is correct but 2FA is required
+        setRequires2FA(true);
+        setError('');
+      } else if (result && typeof result === 'object' && 'twoFactorError' in result) {
+        setError((result as any).twoFactorError || 'Invalid 2FA code');
       } else {
         setError('Incorrect master password');
       }
+    }
+  };
+
+  const handle2FASubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    if (!twoFactorCode || twoFactorCode.length !== 6) {
+      setError('Please enter a 6-digit verification code');
+      return;
+    }
+    
+    setIsVerifying(true);
+    const result = await verifyAndUnlock(password, twoFactorCode);
+    setIsVerifying(false);
+    if (result === true) {
+      setPassword('');
+      setTwoFactorCode('');
+      setRequires2FA(false);
+    } else if (result && typeof result === 'object' && 'twoFactorError' in result) {
+      setError((result as any).twoFactorError || 'Invalid verification code');
+      setTwoFactorCode('');
+    } else {
+      setError('Invalid verification code');
+      setTwoFactorCode('');
     }
   };
 
@@ -64,52 +104,108 @@ export function LoginPage() {
             : 'Enter your master password to unlock the vault'}
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Master Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setError('');
-              }}
-              className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter master password"
-              autoFocus
-            />
-          </div>
-
-          {(isSetup || !masterPasswordExists) && (
+        {!requires2FA ? (
+          <form onSubmit={handlePasswordSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Confirm Password</label>
+              <label className="block text-sm font-medium mb-2">Master Password</label>
               <input
                 type="password"
-                value={confirmPassword}
+                value={password}
                 onChange={(e) => {
-                  setConfirmPassword(e.target.value);
+                  setPassword(e.target.value);
                   setError('');
                 }}
                 className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Confirm master password"
+                placeholder="Enter master password"
+                autoFocus
+                disabled={isVerifying}
               />
             </div>
-          )}
 
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
-              {error}
+            {(isSetup || !masterPasswordExists) && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Confirm Password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    setError('');
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Confirm master password"
+                  disabled={isVerifying}
+                />
+              </div>
+            )}
+
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              disabled={isVerifying}
+            >
+              <Lock className="w-4 h-4" />
+              {isVerifying ? 'Verifying...' : (isSetup || !masterPasswordExists ? 'Create Vault' : 'Continue')}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handle2FASubmit} className="space-y-4">
+            <div>
+              <p className="text-sm text-gray-600 mb-4 text-center">
+                Enter the 6-digit code from your authenticator app:
+              </p>
+              <input
+                type="text"
+                value={twoFactorCode}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setTwoFactorCode(value);
+                  setError('');
+                }}
+                className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl font-mono tracking-widest"
+                placeholder="000000"
+                maxLength={6}
+                autoFocus
+                disabled={isVerifying}
+              />
             </div>
-          )}
 
-          <button
-            type="submit"
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-          >
-            <Lock className="w-4 h-4" />
-            {isSetup || !masterPasswordExists ? 'Create Vault' : 'Unlock Vault'}
-          </button>
-        </form>
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
+                {error}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRequires2FA(false);
+                  setTwoFactorCode('');
+                  setError('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                disabled={isVerifying}
+              >
+                Back
+              </button>
+              <button
+                type="submit"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={isVerifying || twoFactorCode.length !== 6}
+              >
+                <Shield className="w-4 h-4" />
+                {isVerifying ? 'Verifying...' : 'Unlock Vault'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

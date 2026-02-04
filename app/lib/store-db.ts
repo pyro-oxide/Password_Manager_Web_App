@@ -5,6 +5,11 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { PasswordEntry, Category, VaultSettings, VaultHealth } from '../types';
 import { dbSync } from './db-sync';
 
+type UnlockResult = 
+  | boolean 
+  | { requires2FA: true }
+  | { twoFactorError: string };
+
 interface VaultState {
   isLocked: boolean;
   masterPasswordSalt: string | null; // Store salt for encryption, not the password itself
@@ -20,7 +25,7 @@ interface VaultState {
   // Actions
   initializeDatabase: () => Promise<boolean>;
   checkMasterPasswordExists: () => Promise<boolean>;
-  verifyAndUnlock: (password: string) => Promise<boolean>;
+  verifyAndUnlock: (password: string, twoFactorCode?: string) => Promise<UnlockResult>;
   setMasterPassword: (password: string) => Promise<boolean>;
   lock: () => void;
   loadPasswords: () => Promise<void>;
@@ -102,7 +107,7 @@ export const useVaultStore = create<VaultState>()(
         return false;
       },
 
-      verifyAndUnlock: async (password: string) => {
+      verifyAndUnlock: async (password: string, twoFactorCode?: string) => {
         const state = get();
         
         // If no master password exists, set it up
@@ -131,6 +136,23 @@ export const useVaultStore = create<VaultState>()(
         }
         
         if (verification.valid && verification.salt) {
+          // Check if 2FA is enabled
+          const twoFactorEnabled = await dbSync.getSetting('twoFactorEnabled');
+          
+          if (twoFactorEnabled === 'true') {
+            // 2FA is enabled, verify the code
+            if (!twoFactorCode) {
+              // Return a special code to indicate 2FA is required
+              return { requires2FA: true };
+            }
+            
+            const twoFactorResult = await dbSync.verify2FALogin(twoFactorCode);
+            if (!twoFactorResult.success || !twoFactorResult.verified) {
+              return { twoFactorError: twoFactorResult.error || 'Invalid 2FA code' };
+            }
+          }
+          
+          // Password is valid and 2FA (if enabled) is verified
           currentMasterPassword = password;
           set({
             masterPasswordSalt: verification.salt,
@@ -388,7 +410,12 @@ export const useVaultStore = create<VaultState>()(
           await dbSync.setSetting('clearClipboardSeconds', settings.clearClipboardSeconds.toString());
         }
         if (settings.twoFactorEnabled !== undefined) {
-          await dbSync.setSetting('twoFactorEnabled', settings.twoFactorEnabled.toString());
+          if (settings.twoFactorEnabled === false) {
+            // When disabling 2FA, use the dedicated API that also clears the secret
+            await dbSync.disable2FA();
+          } else {
+            await dbSync.setSetting('twoFactorEnabled', settings.twoFactorEnabled.toString());
+          }
         }
       },
 

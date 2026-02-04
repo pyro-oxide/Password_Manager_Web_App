@@ -345,6 +345,38 @@ class DatabaseSync {
       return false;
     }
   }
+
+  async disable2FA(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/2fa/disable`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      return data.success;
+    } catch (error) {
+      console.error('Error disabling 2FA:', error);
+      return false;
+    }
+  }
+
+  async verify2FALogin(token: string): Promise<{ success: boolean; verified: boolean; error?: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/2fa/verify-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const data = await response.json();
+      return {
+        success: data.success,
+        verified: data.verified || false,
+        error: data.error,
+      };
+    } catch (error) {
+      console.error('Error verifying 2FA for login:', error);
+      return { success: false, verified: false, error: 'Failed to verify 2FA code' };
+    }
+  }
 }
 
 export const dbSync = new DatabaseSync();
